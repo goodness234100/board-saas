@@ -455,7 +455,7 @@ async function bootAfterAuth() {
 
   if (error) {
     authError.style.color = '#b23b3b';
-    authError.textContent = 'Could not load your account. Try again.';
+    authError.textContent = 'Could not load your account: ' + (error && error.message ? error.message : 'unknown error');
     showScreen('auth');
     return;
   }
