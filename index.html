@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>board</title>
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --panel: #ffffff;
+    --ink: #2b2620;
+    --ink-soft: #6b6357;
+    --border: #ddd6c8;
+    --accent: #c9a227;
+    --accent-line: #c9a227;
+    --shadow: rgba(0,0,0,0.15);
+    --overlay: rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; }
+
+  /* ---------- shared screen helpers ---------- */
+  .screen {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    background: var(--bg); z-index: 50; padding: 20px;
+  }
+  .screen.active { display: flex; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 28px 24px; width: 320px;
+    max-width: 100%; box-shadow: 0 8px 24px var(--shadow); text-align: center;
+  }
+  .card h1 { font-size: 22px; margin: 0 0 4px; }
+  .card p.sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 18px; }
+  .card input {
+    width: 100%; padding: 10px; margin-bottom: 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--ink); font-size: 14px; outline: none;
+  }
+  .card button.primary {
+    width: 100%; padding: 11px; border: none; border-radius: 8px;
+    background: var(--accent); color: #26220f; font-weight: 700;
+    font-size: 14px; cursor: pointer; margin-top: 4px;
+  }
+  .card .switch {
+    margin-top: 14px; font-size: 12.5px; color: var(--ink-soft);
+    cursor: pointer; text-decoration: underline;
+  }
+  .card .error { color: #b23b3b; font-size: 12.5px; margin: -4px 0 10px; min-height: 14px; }
+  .card .price { font-size: 34px; font-weight: 800; margin: 10px 0 2px; }
+  .card .price span { font-size: 14px; font-weight: 500; color: var(--ink-soft); }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: var(--panel);
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .topbar button {
+    font-size: 14px; font-weight: 600; border: none; border-radius: 8px;
+    padding: 8px 14px; cursor: pointer; background: var(--accent); color: #26220f;
+  }
+  .topbar button.secondary {
+    background: transparent; color: var(--ink-soft);
+    border: 1px solid var(--border); font-weight: 500;
+  }
+  .topbar .hint { font-size: 12px; color: var(--ink-soft); }
+  .topbar .grow { flex: 1; }
+  .topbar .email { font-size: 12px; color: var(--ink-soft); }
+
+  /* ---------- board ---------- */
+  .canvas-wrap {
+    position: relative; flex: 1; overflow: auto;
+    background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  #canvasInner { position: relative; width: 1600px; height: 1600px; }
+  svg#lines { position: absolute; top: 0; left: 0; width: 1600px; height: 1600px; pointer-events: none; }
+  .note {
+    position: absolute; width: 190px; min-height: 140px; border-radius: 10px; padding: 10px;
+    box-shadow: 0 3px 8px var(--shadow); display: flex; flex-direction: column; gap: 6px;
+    cursor: grab; border: 2px solid transparent; touch-action: none; user-select: none;
+  }
+  .note.pinned { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,162,39,0.25), 0 3px 8px var(--shadow); }
+  .note .row { display: flex; justify-content: space-between; align-items: center; }
+  .note button.pin, .note button.del {
+    background: rgba(255,255,255,0.5); border: none; border-radius: 6px;
+    font-size: 13px; cursor: pointer; padding: 2px 6px; line-height: 1.4;
+  }
+  .note.pinned button.pin { background: var(--accent); }
+  .note textarea {
+    flex: 1; resize: none; border: none; background: transparent; font-size: 13px;
+    color: #262115; font-family: inherit; outline: none; cursor: text;
+  }
+  .empty-msg {
+    position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    color: var(--ink-soft); font-size: 14px; text-align: center; width: 260px;
+  }
+
+  /* ---------- folder drawer ---------- */
+  .drawer-handle {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+    width: 16px; height: 74px; background: var(--accent); border-radius: 0 10px 10px 0;
+    z-index: 20; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: 2px 0 6px var(--shadow); font-size: 11px; color: #26220f;
+    writing-mode: vertical-rl; letter-spacing: 1px; user-select: none;
+  }
+  .drawer-overlay {
+    position: fixed; inset: 0; background: var(--overlay); z-index: 18;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; left: 0; top: 0; height: 100%; width: 250px; max-width: 80vw;
+    background: var(--panel); border-right: 1px solid var(--border); z-index: 19;
+    transform: translateX(-100%); transition: transform 0.22s ease;
+    display: flex; flex-direction: column; box-shadow: 4px 0 12px var(--shadow);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-header {
+    padding: 14px 14px 10px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .drawer-header h3 { margin: 0; font-size: 15px; }
+  .drawer-header button { background: none; border: none; font-size: 16px; color: var(--ink-soft); cursor: pointer; }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 10px 10px 0; }
+  .save-folder-btn {
+    display: block; width: 100%; margin: 0 0 10px; padding: 9px; border-radius: 8px;
+    border: 1px dashed var(--accent); background: transparent; color: var(--ink);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .save-folder-btn:disabled { opacity: 0.4; cursor: default; }
+  .folder-empty { font-size: 12px; color: var(--ink-soft); text-align: center; padding: 20px 8px; }
+  .folder-item { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .folder-item-head { display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; }
+  .folder-item-head .tag { flex: 1; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .folder-item-head .count { font-size: 11px; color: var(--ink-soft); background: var(--bg); border-radius: 10px; padding: 1px 7px; }
+  .folder-item-head .del { background: none; border: none; color: var(--ink-soft); font-size: 13px; cursor: pointer; }
+
+  /* ---------- folder contents (full screen) ---------- */
+  .folder-screen {
+    position: fixed; inset: 0; background: var(--bg); z-index: 40;
+    display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.22s ease;
+  }
+  .folder-screen.open { transform: translateX(0); }
+  .folder-screen-header {
+    display: flex; align-items: center; gap: 10px; padding: 14px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .folder-screen-header button.back { background: none; border: none; font-size: 20px; color: var(--ink); cursor: pointer; padding: 0 4px; }
+  .folder-screen-header h3 { margin: 0; font-size: 16px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .folder-screen-header button.del-folder { background: none; border: none; font-size: 14px; color: var(--ink-soft); cursor: pointer; }
+  .folder-screen-body { flex: 1; overflow-y: auto; padding: 14px; }
+  .folder-screen-body .sub { font-size: 12px; color: var(--ink-soft); margin: 0 0 12px; }
+  .file-card {
+    border-radius: 10px; padding: 12px; margin-bottom: 10px; box-shadow: 0 2px 6px var(--shadow);
+    font-size: 13px; color: #262115; word-break: break-word; white-space: pre-wrap;
+  }
+  .file-card.empty-text { color: rgba(38,33,21,0.5); font-style: italic; }
+  .folder-screen-empty { font-size: 13px; color: var(--ink-soft); text-align: center; padding: 30px 10px; }
+
+  /* ---------- name-folder modal ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: var(--overlay); z-index: 55;
+    display: none; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box { background: var(--panel); border-radius: 10px; padding: 16px; width: 260px; box-shadow: 0 8px 20px var(--shadow); }
+  .modal-box h4 { margin: 0 0 10px; font-size: 14px; }
+  .modal-box input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--ink); font-size: 13px; outline: none; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .modal-actions button { border: none; border-radius: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  .modal-actions .cancel { background: transparent; color: var(--ink-soft); }
+  .modal-actions .confirm { background: var(--accent); color: #26220f; font-weight: 600; }
+
+  .loading-note { font-size: 13px; color: var(--ink-soft); text-align: center; padding: 40px 20px; }
+
+  /* ---------- note images ---------- */
+  .note-image-wrap { position: relative; margin-bottom: 2px; }
+  .note-image-wrap img {
+    width: 100%; max-height: 100px; object-fit: cover;
+    border-radius: 6px; display: block; cursor: zoom-in; background: rgba(0,0,0,0.05);
+  }
+  .note-image-wrap .remove-img {
+    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px;
+    border-radius: 50%; border: none; background: rgba(0,0,0,0.55); color: #fff;
+    font-size: 11px; line-height: 1; cursor: pointer;
+  }
+  .note-image-wrap .uploading { font-size: 11px; color: var(--ink-soft); padding: 4px 0; }
+  .note button.img { background: rgba(255,255,255,0.5); border: none; border-radius: 6px; font-size: 13px; cursor: pointer; padding: 2px 6px; line-height: 1.4; }
+
+  .lightbox-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.86); z-index: 60;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .lightbox-overlay.open { display: flex; }
+  .lightbox-overlay img { max-width: 92vw; max-height: 90vh; border-radius: 8px; }
+  .lightbox-overlay .lightbox-close {
+    position: fixed; top: 14px; right: 16px; background: rgba(255,255,255,0.15);
+    color: #fff; border: none; border-radius: 50%; width: 34px; height: 34px;
+    font-size: 18px; cursor: pointer;
+  }
+
+  .file-card img { width: 100%; border-radius: 8px; margin-bottom: 8px; display: block; }
+</style>
+</head>
+<body>
+
+  <!-- ===== AUTH SCREEN ===== -->
+  <div class="screen active" id="authScreen">
+    <div class="card">
+      <h1>📌 board</h1>
+      <p class="sub" id="authSub">Sign in to your account</p>
+      <div class="error" id="authError"></div>
+      <input type="email" id="authEmail" placeholder="Email" autocomplete="email">
+      <input type="password" id="authPassword" placeholder="Password" autocomplete="current-password">
+      <button class="primary" id="authSubmitBtn">Sign in</button>
+      <div class="switch" id="authSwitch">Need an account? Sign up</div>
+    </div>
+  </div>
+
+  <!-- ===== PAYWALL SCREEN ===== -->
+  <div class="screen" id="paywallScreen">
+    <div class="card">
+      <h1>📌 board</h1>
+      <p class="sub">One-time purchase, yours for good.</p>
+      <div class="price" id="paywallPrice">$12 <span>one-time</span></div>
+      <p class="sub">No subscription. Pay once, keep access forever.</p>
+      <div class="error" id="paywallStatus" style="color: var(--ink-soft);"></div>
+      <button class="primary" id="payBtn">Unlock board</button>
+      <div class="switch" id="signOutFromPaywall">Sign out</div>
+    </div>
+  </div>
+
+  <!-- ===== APP ===== -->
+  <div class="screen" id="appScreen">
+    <div style="display:flex; flex-direction:column; height:100%; width:100%;">
+      <div class="topbar">
+        <button id="addBtn">+ New Note</button>
+        <button id="clearBtn" class="secondary">Clear board</button>
+        <span class="hint">📌 Pin two or more to connect them</span>
+        <span class="grow"></span>
+        <span class="email" id="userEmailLabel"></span>
+        <button class="secondary" id="signOutBtn">Sign out</button>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap">
+        <div id="canvasInner">
+          <svg id="lines"></svg>
+          <div id="notesLayer"></div>
+        </div>
+        <div class="empty-msg" id="emptyMsg">No notes yet. Tap "+ New Note" to start your board.</div>
+        <div class="loading-note" id="loadingNote" style="display:none;">Loading your board…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-handle" id="drawerHandle">FOLDERS</div>
+  <div class="drawer-overlay" id="drawerOverlay"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-header">
+      <h3>📁 Folders</h3>
+      <button id="drawerCloseBtn">✕</button>
+    </div>
+    <div class="drawer-body">
+      <button class="save-folder-btn" id="saveFolderBtn" disabled>+ Save pinned notes as folder</button>
+      <div id="folderList"></div>
+    </div>
+  </div>
+
+  <div class="folder-screen" id="folderScreen">
+    <div class="folder-screen-header">
+      <button class="back" id="folderScreenBack">←</button>
+      <h3 id="folderScreenTitle">Folder</h3>
+      <button class="del-folder" id="folderScreenDelete">Delete folder</button>
+    </div>
+    <div class="folder-screen-body" id="folderScreenBody"></div>
+  </div>
+
+  <input type="file" id="imageFileInput" accept="image/*" style="display:none;">
+
+  <div class="lightbox-overlay" id="lightboxOverlay">
+    <button class="lightbox-close" id="lightboxClose">✕</button>
+    <img id="lightboxImg" src="" alt="">
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-box">
+      <h4>Tag this folder</h4>
+      <input type="text" id="folderNameInput" placeholder="e.g. Trip planning" maxlength="40">
+      <div class="modal-actions">
+        <button class="cancel" id="modalCancelBtn">Cancel</button>
+        <button class="confirm" id="modalConfirmBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// ============================================================
+// CONFIGURE THESE VALUES BEFORE DEPLOYING
+// ============================================================
+const SUPABASE_URL = 'https://ulfvdftpwtluipxsekcl.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsZnZkZnRwd3RsdWlweHNla2NsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NTEyMjYsImV4cCI6MjEwNTIyNzIyNn0.b8MFcu_DtmaQDWOsXKQK2NJ-EBiE_L2booK8eOjK_ag';
+
+const PAYSTACK_PUBLIC_KEY = 'pk_test_replace_with_your_paystack_public_key';
+const PAYSTACK_AMOUNT = 500000;      // amount in the smallest currency unit — kobo for NGN, so 500000 = ₦5,000
+const PAYSTACK_CURRENCY = 'NGN';     // Paystack also supports GHS, ZAR, USD depending on your account
+// ============================================================
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const COLORS = ['#ffe9a8', '#ffd0d0', '#c9f0d6', '#c9e4ff', '#e6d3ff', '#ffdcb0'];
+
+let currentUser = null;
+let notes = [];
+let folders = [];
+let activeFolderId = null;
+
+// ---------- screen switching ----------
+const screens = {
+  auth: document.getElementById('authScreen'),
+  paywall: document.getElementById('paywallScreen'),
+  app: document.getElementById('appScreen'),
+};
+function showScreen(name) {
+  Object.values(screens).forEach(s => s.classList.remove('active'));
+  screens[name].classList.add('active');
+}
+
+// ---------- AUTH SCREEN ----------
+let authMode = 'signin'; // or 'signup'
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authError = document.getElementById('authError');
+const authSub = document.getElementById('authSub');
+const authSubmitBtn = document.getElementById('authSubmitBtn');
+const authSwitch = document.getElementById('authSwitch');
+
+authSwitch.addEventListener('click', () => {
+  authMode = authMode === 'signin' ? 'signup' : 'signin';
+  authSub.textContent = authMode === 'signin' ? 'Sign in to your account' : 'Create your account';
+  authSubmitBtn.textContent = authMode === 'signin' ? 'Sign in' : 'Sign up';
+  authSwitch.textContent = authMode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in';
+  authError.textContent = '';
+});
+
+authSubmitBtn.addEventListener('click', async () => {
+  authError.textContent = '';
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  if (!email || !password) { authError.textContent = 'Enter an email and password.'; return; }
+
+  authSubmitBtn.disabled = true;
+  try {
+    if (authMode === 'signup') {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+      authError.style.color = '#3b7a3b';
+      authError.textContent = 'Check your email to confirm your account, then sign in.';
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await bootAfterAuth();
+    }
+  } catch (e) {
+    authError.style.color = '#b23b3b';
+    authError.textContent = e.message || 'Something went wrong.';
+  } finally {
+    authSubmitBtn.disabled = false;
+  }
+});
+
+// ---------- PAYWALL SCREEN ----------
+const payBtn = document.getElementById('payBtn');
+const paywallStatus = document.getElementById('paywallStatus');
+
+payBtn.addEventListener('click', () => {
+  if (!currentUser) return;
+  paywallStatus.textContent = '';
+
+  const handler = PaystackPop.setup({
+    key: PAYSTACK_PUBLIC_KEY,
+    email: currentUser.email,
+    amount: PAYSTACK_AMOUNT,
+    currency: PAYSTACK_CURRENCY,
+    metadata: {
+      user_id: currentUser.id,
+      custom_fields: [
+        { display_name: 'App user ID', variable_name: 'user_id', value: currentUser.id }
+      ]
+    },
+    callback: function (response) {
+      // Paystack confirms the popup succeeded. The webhook (server-side,
+      // using the secret key) is the source of truth that actually flips
+      // `paid` in the database — we just wait a few seconds for it here.
+      waitForPaidStatus();
+    },
+    onClose: function () {
+      // user closed the popup without paying — nothing to do
+    }
+  });
+  handler.openIframe();
+});
+
+async function waitForPaidStatus() {
+  paywallStatus.textContent = 'Payment received — activating your account…';
+  payBtn.disabled = true;
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('paid')
+      .eq('id', currentUser.id)
+      .single();
+    if (profile && profile.paid) {
+      paywallStatus.textContent = '';
+      payBtn.disabled = false;
+      await bootAfterAuth();
+      return;
+    }
+  }
+
+  paywallStatus.textContent = "Payment is confirmed on Paystack's side but is taking a little longer than usual to reflect here — try Sign out and back in in a minute, or contact support if it doesn't clear.";
+  payBtn.disabled = false;
+}
+
+document.getElementById('signOutFromPaywall').addEventListener('click', signOut);
+document.getElementById('signOutBtn').addEventListener('click', signOut);
+
+async function signOut() {
+  await supabase.auth.signOut();
+  currentUser = null;
+  showScreen('auth');
+}
+
+// ---------- BOOT FLOW ----------
+async function bootAfterAuth() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { showScreen('auth'); return; }
+  currentUser = user;
+
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('paid')
+    .eq('id', user.id)
+    .single();
+
+  if (error) {
+    authError.style.color = '#b23b3b';
+    authError.textContent = 'Could not load your account. Try again.';
+    showScreen('auth');
+    return;
+  }
+
+  if (!profile.paid) {
+    showScreen('paywall');
+    return;
+  }
+
+  document.getElementById('userEmailLabel').textContent = user.email;
+  showScreen('app');
+  await loadBoard();
+}
+
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+    if (session) bootAfterAuth();
+  }
+  if (event === 'SIGNED_OUT') {
+    showScreen('auth');
+  }
+});
+
+// ============================================================
+// BOARD LOGIC (same UX as before, backed by Supabase tables)
+// ============================================================
+const wrap = document.getElementById('canvasWrap');
+const layer = document.getElementById('notesLayer');
+const svg = document.getElementById('lines');
+const emptyMsg = document.getElementById('emptyMsg');
+const loadingNote = document.getElementById('loadingNote');
+
+const drawer = document.getElementById('drawer');
+const drawerOverlay = document.getElementById('drawerOverlay');
+const drawerHandle = document.getElementById('drawerHandle');
+const drawerCloseBtn = document.getElementById('drawerCloseBtn');
+const saveFolderBtn = document.getElementById('saveFolderBtn');
+const folderList = document.getElementById('folderList');
+
+const modalOverlay = document.getElementById('modalOverlay');
+const folderNameInput = document.getElementById('folderNameInput');
+const modalCancelBtn = document.getElementById('modalCancelBtn');
+const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+
+const folderScreen = document.getElementById('folderScreen');
+const folderScreenTitle = document.getElementById('folderScreenTitle');
+const folderScreenBody = document.getElementById('folderScreenBody');
+const folderScreenBack = document.getElementById('folderScreenBack');
+const folderScreenDelete = document.getElementById('folderScreenDelete');
+
+async function loadBoard() {
+  loadingNote.style.display = 'block';
+  const [{ data: noteRows, error: nErr }, { data: folderRows, error: fErr }] = await Promise.all([
+    supabase.from('notes').select('*').order('updated_at', { ascending: true }),
+    supabase.from('folders').select('*').order('created_at', { ascending: true }),
+  ]);
+  loadingNote.style.display = 'none';
+
+  notes = (noteRows || []).map(r => ({
+    id: r.id, x: r.x, y: r.y, text: r.text, color: r.color, pinned: r.pinned,
+    image_path: r.image_path || null, image_url: null, uploading: false,
+  }));
+  folders = (folderRows || []).map(r => ({ id: r.id, tag: r.tag, files: r.files || [] }));
+
+  if (nErr) console.error(nErr);
+  if (fErr) console.error(fErr);
+
+  render();
+  renderFolders();
+  await resolveImageUrls(notes);
+  render();
+}
+
+// Signed URLs are short-lived, so we fetch them fresh whenever notes load
+// rather than storing them. `note-images` is a private bucket — only the
+// owning user's session can request a signed URL for their own files.
+async function resolveImageUrls(list) {
+  const withImages = list.filter(n => n.image_path && !n.image_url);
+  await Promise.all(withImages.map(async (n) => {
+    const { data, error } = await supabase.storage
+      .from('note-images')
+      .createSignedUrl(n.image_path, 60 * 60); // 1 hour
+    if (!error && data) n.image_url = data.signedUrl;
+  }));
+}
+
+// Shrinks a photo client-side before upload so a phone photo (often 3-4MB)
+// doesn't eat into storage/bandwidth limits. Returns a JPEG Blob.
+function compressImage(file, maxDim = 1200, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not process image')), 'image/jpeg', quality);
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadImageForNote(note, file) {
+  note.uploading = true;
+  render();
+  try {
+    const blob = await compressImage(file);
+    const path = `${currentUser.id}/${note.id}-${Date.now()}.jpg`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('note-images')
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (uploadError) throw uploadError;
+
+    // clean up the previous image for this note, if any
+    if (note.image_path) {
+      await supabase.storage.from('note-images').remove([note.image_path]);
+    }
+
+    const { error: dbError } = await supabase
+      .from('notes')
+      .update({ image_path: path })
+      .eq('id', note.id);
+    if (dbError) throw dbError;
+
+    note.image_path = path;
+    const { data } = await supabase.storage.from('note-images').createSignedUrl(path, 60 * 60);
+    note.image_url = data ? data.signedUrl : null;
+  } catch (e) {
+    console.error('Image upload failed:', e);
+    alert('Could not upload that image. Try a smaller photo or check your connection.');
+  } finally {
+    note.uploading = false;
+    render();
+  }
+}
+
+async function removeImageFromNote(note) {
+  const path = note.image_path;
+  note.image_path = null;
+  note.image_url = null;
+  render();
+  await supabase.from('notes').update({ image_path: null }).eq('id', note.id);
+  if (path) await supabase.storage.from('note-images').remove([path]);
+}
+
+// ---------- lightbox ----------
+const lightboxOverlay = document.getElementById('lightboxOverlay');
+const lightboxImg = document.getElementById('lightboxImg');
+document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
+lightboxOverlay.addEventListener('click', (e) => { if (e.target === lightboxOverlay) closeLightbox(); });
+function openLightbox(url) { lightboxImg.src = url; lightboxOverlay.classList.add('open'); }
+function closeLightbox() { lightboxOverlay.classList.remove('open'); lightboxImg.src = ''; }
+
+// ---------- hidden file input, shared across notes ----------
+const imageFileInput = document.getElementById('imageFileInput');
+let pendingImageNote = null;
+imageFileInput.addEventListener('change', () => {
+  const file = imageFileInput.files[0];
+  imageFileInput.value = '';
+  if (file && pendingImageNote) uploadImageForNote(pendingImageNote, file);
+  pendingImageNote = null;
+});
+
+async function addNote() {
+  const wrapRect = wrap.getBoundingClientRect();
+  const x = wrap.scrollLeft + Math.random() * Math.max(40, wrapRect.width - 260) + 20;
+  const y = wrap.scrollTop + Math.random() * Math.max(40, wrapRect.height - 220) + 20;
+  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+  const { data, error } = await supabase
+    .from('notes')
+    .insert({ user_id: currentUser.id, x, y, text: '', color, pinned: false })
+    .select()
+    .single();
+
+  if (error) { console.error(error); return; }
+  notes.push({
+    id: data.id, x: data.x, y: data.y, text: data.text, color: data.color, pinned: data.pinned,
+    image_path: null, image_url: null, uploading: false,
+  });
+  render();
+}
+
+async function removeNote(id) {
+  const note = notes.find(n => n.id === id);
+  notes = notes.filter(n => n.id !== id);
+  render();
+  await supabase.from('notes').delete().eq('id', id);
+  if (note && note.image_path) {
+    await supabase.storage.from('note-images').remove([note.image_path]);
+  }
+}
+
+async function togglePin(id) {
+  const n = notes.find(n => n.id === id);
+  if (!n) return;
+  n.pinned = !n.pinned;
+  render();
+  await supabase.from('notes').update({ pinned: n.pinned }).eq('id', id);
+}
+
+async function clearBoard() {
+  if (notes.length === 0) return;
+  const ids = notes.map(n => n.id);
+  notes = [];
+  render();
+  await supabase.from('notes').delete().in('id', ids);
+}
+
+let textSaveTimers = {};
+function scheduleTextSave(note) {
+  clearTimeout(textSaveTimers[note.id]);
+  textSaveTimers[note.id] = setTimeout(() => {
+    supabase.from('notes').update({ text: note.text }).eq('id', note.id);
+  }, 500);
+}
+
+let posSaveTimers = {};
+function schedulePosSave(note) {
+  clearTimeout(posSaveTimers[note.id]);
+  posSaveTimers[note.id] = setTimeout(() => {
+    supabase.from('notes').update({ x: note.x, y: note.y }).eq('id', note.id);
+  }, 400);
+}
+
+function makeDraggable(el, note) {
+  let startX, startY, origX, origY, dragging = false;
+
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
+    dragging = true;
+    el.setPointerCapture(e.pointerId);
+    startX = e.clientX; startY = e.clientY;
+    origX = note.x; origY = note.y;
+    el.style.cursor = 'grabbing';
+    el.style.zIndex = 10;
+  });
+
+  el.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    note.x = Math.max(0, origX + dx);
+    note.y = Math.max(0, origY + dy);
+    el.style.left = note.x + 'px';
+    el.style.top = note.y + 'px';
+    drawLines();
+  });
+
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    el.style.cursor = 'grab';
+    el.style.zIndex = '';
+    schedulePosSave(note);
+  }
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+}
+
+function render() {
+  layer.innerHTML = '';
+  emptyMsg.style.display = notes.length === 0 ? 'block' : 'none';
+
+  notes.forEach((note) => {
+    const el = document.createElement('div');
+    el.className = 'note' + (note.pinned ? ' pinned' : '');
+    el.style.left = note.x + 'px';
+    el.style.top = note.y + 'px';
+    el.style.background = note.color;
+
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'pin';
+    pinBtn.textContent = note.pinned ? '📌' : '📍';
+    pinBtn.addEventListener('click', () => togglePin(note.id));
+
+    const imgBtn = document.createElement('button');
+    imgBtn.className = 'img';
+    imgBtn.textContent = '📷';
+    imgBtn.title = note.image_path ? 'Replace photo' : 'Add photo';
+    imgBtn.addEventListener('click', () => {
+      pendingImageNote = note;
+      imageFileInput.click();
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', () => removeNote(note.id));
+
+    row.appendChild(pinBtn);
+    row.appendChild(imgBtn);
+    row.appendChild(delBtn);
+    el.appendChild(row);
+
+    if (note.uploading) {
+      const uploading = document.createElement('div');
+      uploading.className = 'uploading';
+      uploading.textContent = 'Uploading photo…';
+      el.appendChild(uploading);
+    } else if (note.image_path) {
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'note-image-wrap';
+
+      const img = document.createElement('img');
+      img.src = note.image_url || '';
+      img.alt = '';
+      img.addEventListener('pointerdown', (e) => e.stopPropagation());
+      img.addEventListener('click', () => { if (note.image_url) openLightbox(note.image_url); });
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-img';
+      removeBtn.textContent = '✕';
+      removeBtn.title = 'Remove photo';
+      removeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+      removeBtn.addEventListener('click', () => removeImageFromNote(note));
+
+      imgWrap.appendChild(img);
+      imgWrap.appendChild(removeBtn);
+      el.appendChild(imgWrap);
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.placeholder = 'Write a note...';
+    textarea.value = note.text;
+    textarea.addEventListener('input', () => { note.text = textarea.value; scheduleTextSave(note); });
+    textarea.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    el.appendChild(textarea);
+    layer.appendChild(el);
+
+    makeDraggable(el, note);
+  });
+
+  drawLines();
+  updateSaveFolderBtn();
+}
+
+function noteCenter(note) { return { x: note.x + 95, y: note.y + 70 }; }
+
+function drawLines() {
+  svg.innerHTML = '';
+  const pinned = notes.filter(n => n.pinned);
+  if (pinned.length < 2) return;
+  for (let i = 0; i < pinned.length; i++) {
+    for (let j = i + 1; j < pinned.length; j++) {
+      const a = noteCenter(pinned[i]);
+      const b = noteCenter(pinned[j]);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+      line.setAttribute('stroke', 'var(--accent-line)');
+      line.setAttribute('stroke-width', '2');
+      line.setAttribute('stroke-dasharray', '6,5');
+      line.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(line);
+    }
+  }
+}
+
+// ---------- folder drawer ----------
+function openDrawer() { drawer.classList.add('open'); drawerOverlay.classList.add('open'); }
+function closeDrawer() { drawer.classList.remove('open'); drawerOverlay.classList.remove('open'); }
+
+function updateSaveFolderBtn() {
+  const pinnedCount = notes.filter(n => n.pinned).length;
+  saveFolderBtn.disabled = pinnedCount < 2;
+}
+
+function renderFolders() {
+  folderList.innerHTML = '';
+  if (folders.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'folder-empty';
+    empty.textContent = 'No folders yet. Pin two or more notes together, then save them here.';
+    folderList.appendChild(empty);
+    return;
+  }
+  folders.forEach((folder) => {
+    const item = document.createElement('div');
+    item.className = 'folder-item';
+
+    const head = document.createElement('div');
+    head.className = 'folder-item-head';
+
+    const icon = document.createElement('span');
+    icon.textContent = '📁';
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = folder.tag;
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = folder.files.length;
+    const del = document.createElement('button');
+    del.className = 'del';
+    del.textContent = '✕';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      folders = folders.filter(f => f.id !== folder.id);
+      renderFolders();
+      await supabase.from('folders').delete().eq('id', folder.id);
+    });
+
+    head.appendChild(icon); head.appendChild(tag); head.appendChild(count); head.appendChild(del);
+    head.addEventListener('click', () => openFolderScreen(folder.id));
+
+    item.appendChild(head);
+    folderList.appendChild(item);
+  });
+}
+
+async function openFolderScreen(folderId) {
+  const folder = folders.find(f => f.id === folderId);
+  if (!folder) return;
+  activeFolderId = folderId;
+  folderScreenTitle.textContent = '📁 ' + folder.tag;
+  folderScreenBody.innerHTML = '';
+
+  if (folder.files.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'folder-screen-empty';
+    empty.textContent = 'This folder has no files.';
+    folderScreenBody.appendChild(empty);
+    folderScreen.classList.add('open');
+    return;
+  }
+
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  sub.textContent = folder.files.length + ' pinned note' + (folder.files.length === 1 ? '' : 's') + ' in this folder';
+  folderScreenBody.appendChild(sub);
+
+  // resolve fresh signed URLs for any images in this folder (private bucket)
+  const withImages = folder.files.filter(f => f.image_path);
+  const urlByPath = {};
+  await Promise.all(withImages.map(async (f) => {
+    const { data, error } = await supabase.storage.from('note-images').createSignedUrl(f.image_path, 60 * 60);
+    if (!error && data) urlByPath[f.image_path] = data.signedUrl;
+  }));
+
+  folder.files.forEach((f) => {
+    const card = document.createElement('div');
+    card.className = 'file-card' + (!f.text || !f.text.trim() ? ' empty-text' : '');
+    card.style.background = f.color || '#ffe9a8';
+
+    if (f.image_path && urlByPath[f.image_path]) {
+      const img = document.createElement('img');
+      img.src = urlByPath[f.image_path];
+      img.alt = '';
+      img.addEventListener('click', () => openLightbox(urlByPath[f.image_path]));
+      card.appendChild(img);
+    }
+
+    const textNode = document.createElement('div');
+    textNode.textContent = (f.text && f.text.trim()) ? f.text : '(untitled note)';
+    card.appendChild(textNode);
+
+    folderScreenBody.appendChild(card);
+  });
+
+  folderScreen.classList.add('open');
+}
+function closeFolderScreen() { folderScreen.classList.remove('open'); activeFolderId = null; }
+
+folderScreenBack.addEventListener('click', closeFolderScreen);
+folderScreenDelete.addEventListener('click', async () => {
+  if (!activeFolderId) return;
+  const id = activeFolderId;
+  folders = folders.filter(f => f.id !== id);
+  renderFolders();
+  closeFolderScreen();
+  await supabase.from('folders').delete().eq('id', id);
+});
+
+function openNameModal() {
+  folderNameInput.value = '';
+  modalOverlay.classList.add('open');
+  setTimeout(() => folderNameInput.focus(), 50);
+}
+function closeNameModal() { modalOverlay.classList.remove('open'); }
+
+async function confirmSaveFolder() {
+  const pinned = notes.filter(n => n.pinned);
+  if (pinned.length < 2) { closeNameModal(); return; }
+  const tagName = folderNameInput.value.trim() || 'Untitled folder';
+  const files = pinned.map(n => ({ noteId: n.id, text: n.text, color: n.color, image_path: n.image_path || null }));
+
+  const { data, error } = await supabase
+    .from('folders')
+    .insert({ user_id: currentUser.id, tag: tagName, files })
+    .select()
+    .single();
+
+  if (!error) {
+    folders.push({ id: data.id, tag: data.tag, files: data.files });
+    renderFolders();
+  }
+  closeNameModal();
+}
+
+drawerHandle.addEventListener('click', openDrawer);
+drawerOverlay.addEventListener('click', closeDrawer);
+drawerCloseBtn.addEventListener('click', closeDrawer);
+saveFolderBtn.addEventListener('click', () => { if (!saveFolderBtn.disabled) openNameModal(); });
+modalCancelBtn.addEventListener('click', closeNameModal);
+modalConfirmBtn.addEventListener('click', confirmSaveFolder);
+folderNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmSaveFolder(); });
+
+document.getElementById('addBtn').addEventListener('click', addNote);
+document.getElementById('clearBtn').addEventListener('click', clearBoard);
+
+// ---------- kick things off ----------
+(async function init() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    await bootAfterAuth();
+  } else {
+    showScreen('auth');
+  }
+})();
+</script>
+</body>
+</html>
