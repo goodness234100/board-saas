@@ -31,6 +31,10 @@
     align-items: center; justify-content: center;
     background: var(--bg); z-index: 50; padding: 20px;
   }
+  /* The board itself should sit low so the folder drawer (19/20) and the
+     folder-contents screen (40) can render above it. Only the login/paywall
+     screens need to stay at 50, since nothing else is relevant before sign-in. */
+  #appScreen { z-index: 1; }
   .screen.active { display: flex; }
   .card {
     background: var(--panel); border: 1px solid var(--border);
@@ -74,6 +78,29 @@
   .topbar .hint { font-size: 12px; color: var(--ink-soft); }
   .topbar .grow { flex: 1; }
   .topbar .email { font-size: 12px; color: var(--ink-soft); }
+
+  .account-menu {
+    position: absolute;
+    top: 52px;
+    right: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 6px 16px var(--shadow);
+    padding: 10px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 6;
+    min-width: 200px;
+  }
+  .account-menu.open { display: flex; }
+  .account-menu .account-email {
+    font-size: 12px;
+    color: var(--ink-soft);
+    word-break: break-all;
+    padding: 0 2px;
+  }
 
   /* ---------- board ---------- */
   .canvas-wrap {
@@ -247,7 +274,10 @@
         <button id="clearBtn" class="secondary">Clear board</button>
         <span class="hint">📌 Pin two or more to connect them</span>
         <span class="grow"></span>
-        <span class="email" id="userEmailLabel"></span>
+        <button class="secondary" id="accountBtn">👤</button>
+      </div>
+      <div class="account-menu" id="accountMenu">
+        <div class="account-email" id="userEmailLabel"></div>
         <button class="secondary" id="signOutBtn">Sign out</button>
       </div>
       <div class="canvas-wrap" id="canvasWrap">
@@ -435,6 +465,18 @@ async function waitForPaidStatus() {
 document.getElementById('signOutFromPaywall').addEventListener('click', signOut);
 document.getElementById('signOutBtn').addEventListener('click', signOut);
 
+const accountBtn = document.getElementById('accountBtn');
+const accountMenu = document.getElementById('accountMenu');
+accountBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  accountMenu.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  if (accountMenu.classList.contains('open') && !accountMenu.contains(e.target) && e.target !== accountBtn) {
+    accountMenu.classList.remove('open');
+  }
+});
+
 async function signOut() {
   await supabase.auth.signOut();
   currentUser = null;
@@ -455,7 +497,7 @@ async function bootAfterAuth() {
 
   if (error) {
     authError.style.color = '#b23b3b';
-    authError.textContent = 'Could not load your account: ' + (error && error.message ? error.message : 'unknown error');
+    authError.textContent = 'Could not load your account. Try again.';
     showScreen('auth');
     return;
   }
